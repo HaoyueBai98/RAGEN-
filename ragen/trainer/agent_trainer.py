@@ -604,6 +604,25 @@ class RayAgentTrainer(VerlRayPPOTrainer):
                     if self.config.reward_model.launch_reward_fn_async:
                         reward_tensor, reward_extra_infos_dict = ray.get(future_reward)
                     batch.batch["token_level_scores"] = reward_tensor
+                    avg_old_log_prob_batch = masked_mean(ref_log_prob.batch["ref_log_prob"], batch.batch["response_mask"],1)
+                    # # Min-Max normalization to [0, 1]
+                    # min_val = avg_old_log_prob_batch.min()
+                    # max_val = avg_old_log_prob_batch.max()
+                    # norm_log_prob = (avg_old_log_prob_batch - min_val) / (max_val - min_val + 1e-6)
+
+                    # # Scale to desired range [a, b]
+                    # # a, b = 0.8, 1.2
+                    # weight = 0.8 + (1.2 - 0.8) * norm_log_prob
+
+                    # temperature = 1.0  # 可调，越小越偏向最大值
+                    soft_weight = torch.softmax(avg_old_log_prob_batch / 0.1, dim=0)
+
+                    # 放大到合适区间，例如总和为 batch_size
+                    weight = soft_weight * len(avg_old_log_prob_batch)
+
+
+                    batch.batch["token_level_scores"][torch.arange(batch.batch["token_level_scores"].size(0)), -1] *= weight
+                    
 
                     print(f"{list(reward_extra_infos_dict.keys())=}")
                     if reward_extra_infos_dict:
